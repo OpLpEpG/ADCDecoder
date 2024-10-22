@@ -1,0 +1,15 @@
+/.cproject
+/.mxproject
+/.project
+/.settings
+/.vs
+/.vscode
+/ADCDecoder Debug.launch
+/build
+/cmake
+/CMakeLists.txt
+/CMakePresets.json
+/Debug
+/Drivers
+/STM32G474RETX_RAM.ld
+/vcpkg-configuration.json
