@@ -21,70 +21,89 @@
 //float adecoder_t<SMP_PER_SYM,  CODELEN>::decodeSp(void)
 //{
 //	buff_index_t p = ptr;
-//	float res = 0;
-//	decode(0x6999a656, p, res);
-//	decode(0x99559655, p, res);
-//	decode(0xa59556a9, p, res);
-//	decode(0x5a595995, p, res);
+//	float SpRes = 0;
+//	decode(0x6999a656, p, SpRes);
+//	decode(0x99559655, p, SpRes);
+//	decode(0xa59556a9, p, SpRes);
+//	decode(0x5a595995, p, SpRes);
 /*	uint32_t c = 0x6999a656;//, 0x99559655, 0xa59556a9, 0x5a595995, //SP
 	for(uint_fast8_t i =0; i<32; i++)
 	{
-		(c & 0x80000000) ? res +=buf[p.index] : res -= buf[p.index];
+		(c & 0x80000000) ? SpRes +=buf[p.index] : SpRes -= buf[p.index];
 		p.index += SMP_PER_SYM;
 		c <<= 1;
 	}
 	c = 0x99559655;
 	for(uint_fast8_t i =0; i<32; i++)
 	{
-		(c & 0x80000000) ? res +=buf[p.index] : res -= buf[p.index];
+		(c & 0x80000000) ? SpRes +=buf[p.index] : SpRes -= buf[p.index];
 		p.index += SMP_PER_SYM;
 		c <<= 1;
 	}
 	c = 0xa59556a9;
 	for(uint_fast8_t i =0; i<32; i++)
 	{
-		(c & 0x80000000) ? res +=buf[p.index] : res -= buf[p.index];
+		(c & 0x80000000) ? SpRes +=buf[p.index] : SpRes -= buf[p.index];
 		p.index += SMP_PER_SYM;
 		c <<= 1;
 	}
 	c = 0x5a595995; //SP
 	for(uint_fast8_t i =0; i<32; i++)
 	{
-		(c & 0x80000000) ? res +=buf[p.index] : res -= buf[p.index];
+		(c & 0x80000000) ? SpRes +=buf[p.index] : SpRes -= buf[p.index];
 		p.index += SMP_PER_SYM;
 		c <<= 1;
 	}*/
-//	return res/128;
+//	return SpRes/128;
 //}
 
-template<uint_fast8_t SMP_PER_SYM, uint_fast8_t STEP_LEN, uint_fast8_t CODELEN>
-void adecoder_t<SMP_PER_SYM, STEP_LEN,  CODELEN>::nextSp(void)
-{
-	while (dmaCnt >= splen+SMP_PER_SYM/2)
-	{
-		float rescur = decodeSp();
+//template<uint_fast8_t SMP_PER_SYM, uint_fast8_t STEP_LEN, uint_fast8_t CODELEN>
+//void adecoder_t<SMP_PER_SYM, STEP_LEN,  CODELEN>::nextCod(void)
+//{
+//	while (dmaCnt >= codlen+SMP_PER_SYM/2)
+//	{
+//		ptr.index += codlen;
+//		dmaCnt -= codlen;
+//		if (++state == CODELEN) state = FIND_SP;
+//	}
+//}
 
-		if (rescur >= porogsp)
-		{
-			result_t rz;
-			buff_index_t p;
-			ptr.index -= SMP_PER_SYM/2;
-			for (int_fast8_t i =0; i < SMP_PER_SYM; i++)
-			{
-				float r = decodeSp();
-				if (rz.maxCorr <= r)
-				{
-					rz.maxCorr = r;
-					rz.ptr = ptr;
-				}
-			}
-			res = rz;
-			state = 0;
-			return;
-		}
+//template<uint_fast8_t SMP_PER_SYM, uint_fast8_t STEP_LEN, uint_fast8_t CODELEN>
+//void adecoder_t<SMP_PER_SYM, STEP_LEN,  CODELEN>::NextData(void)
+//{
+//	 dmaCnt += dmalen;
+////	 if (state <0) nextSp();
+////	 if (state >= 0) nextCod();
+//}
 
-	ptr.index += STEP_LEN;
-	dmaCnt -= STEP_LEN;
-	SpCnt += STEP_LEN;
-}
-}
+//template<uint_fast8_t SMP_PER_SYM, uint_fast8_t STEP_LEN, uint_fast8_t CODELEN>
+//void adecoder_t<SMP_PER_SYM, STEP_LEN,  CODELEN>::nextSp(void)
+//{
+//	while (dmaCnt >= splen+SMP_PER_SYM/2)
+//	{
+//		float rescur = decodeSp();
+//
+//		if (rescur >= porogsp)
+//		{
+//			result_t rz;
+//			buff_index_t p;
+//			ptr.index -= SMP_PER_SYM/2;
+//			for (int_fast8_t i =0; i < SMP_PER_SYM; i++)
+//			{
+//				float r = decodeSp();
+//				if (rz.maxCorr <= r)
+//				{
+//					rz.maxCorr = r;
+//					rz.ptr = ptr;
+//				}
+//			}
+//			SpRes = rz;
+//			state = 0;
+//			return;
+//		}
+//
+//		ptr.index += STEP_LEN;
+//		dmaCnt -= STEP_LEN;
+//		SpCnt += STEP_LEN;
+//	}
+//}

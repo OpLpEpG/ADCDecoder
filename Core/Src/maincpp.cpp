@@ -12,34 +12,60 @@
 #include "adc.h"
 #include "fmac.h"
 #include "dac.h"
+#include "dma.h"
 #include "adecoder.h"
 #include "stm32g4xx_hal_fmac.h"
 
 extern __IO uint32_t BspButtonState;
 
 static const uint_fast8_t NFLT = 20;
-static const uint_fast8_t STP_LN = 5;
+static const uint_fast8_t STP_LN = 4;
 static const uint_fast8_t LEN_DATA = 28;
 
 typedef adecoder_t<NFLT, STP_LN, LEN_DATA> decinst_t;
 
 static decinst_t decoder;
 
-static int16_t dmaBuf[decinst_t::dmalen];
+static int16_t dmaBuf[decoder.dmalen];
+
+void DMA_DoubleBuffCallback(DMA_HandleTypeDef* d) __attribute__((section (".ccmram")));
+void DecoderRun(void) __attribute__((section (".ccmram")));
 
 void HAL_FMAC_OutputDataReadyCallback(FMAC_HandleTypeDef *hfmac)
 {
 	/* Prevent unused argument(s) compilation warning */
 	UNUSED(hfmac);
 
-	/* NOTE : This function should not be modified; when the callback is needed,
-			  the HAL_FMAC_OutputDataReadyCallback can be implemented in the user file.
-	 */
+	HAL_DMA_Start_IT(&hdma_memtomem_dma1_channel2,
+			(uint32_t)dmaBuf,
+			decoder.NextDma(), decoder.dmalen/2);
+	 if (decoder.dma_status == 0)
+	 	HAL_DMA_Start_IT(&hdma_memtomem_dma2_channel2,
+	 		(uint32_t)dmaBuf,
+	 		decoder.NextDmaEx(), decoder.dmalen/2);
 }
+
+void DMA_DoubleBuffCallback(DMA_HandleTypeDef* d)
+{	
+	if (++decoder.dma_status >= 2)
+	{
+		decoder.NextDataIRQ();
+	}
+}
+
+ void DecoderRun(void)
+ {
+ 	decoder.NextDataPRG();
+ }
 
 extern "C" void main_cpp_begin(void)
 {
 	if (HAL_TIM_OC_Start(&htim4, TIM_CHANNEL_4) != HAL_OK)
+	{
+		/* Starting Error */
+		Error_Handler();
+	}
+	if (HAL_TIM_Base_Start(&htim1) != HAL_OK)
 	{
 		/* Starting Error */
 		Error_Handler();
@@ -49,7 +75,12 @@ extern "C" void main_cpp_begin(void)
 		/* Starting Error */
 		Error_Handler();
 	}
-	HAL_OPAMP_Start(&hopamp3);
+	if (HAL_OPAMP_Start(&hopamp3) != HAL_OK)
+	{
+		/* Starting Error */
+		Error_Handler();
+	}
+	
 
 	static const int16_t ni = (int16_t)(1.0 / NFLT * 0x8000);
 	int16_t FIR_COEF[NFLT];
@@ -86,24 +117,31 @@ extern "C" void main_cpp_begin(void)
 	if (HAL_FMAC_FilterStart(&hfmac, (int16_t *)&DAC2->DHR12R1, &len) != HAL_OK)
 		Error_Handler();
 #else
-	len = decoder.dmalen * sizeof(int16_t);
+	if (HAL_DMA_RegisterCallback(&hdma_memtomem_dma2_channel2, HAL_DMA_XFER_CPLT_CB_ID, DMA_DoubleBuffCallback) != HAL_OK)
+		Error_Handler();
+	if (HAL_DMA_RegisterCallback(&hdma_memtomem_dma1_channel2, HAL_DMA_XFER_CPLT_CB_ID, DMA_DoubleBuffCallback) != HAL_OK)
+		Error_Handler();
+	len = decoder.dmalen;
 	if (HAL_FMAC_FilterStart(&hfmac, dmaBuf, &len) != HAL_OK)
 		Error_Handler();
-//   MODIFY_REG(hfmac.Instance->CR, \
-	//                  FMAC_IT_RIEN | FMAC_IT_WIEN | FMAC_CR_DMAREN | FMAC_CR_DMAWEN, \
-	// 				 FMAC_CR_DMAREN | FMAC_CR_DMAWEN);
-
-//   HAL_DMA_Start_IT(hfmac.hdmaOut, (uint32_t)hfmac.Instance->RDATA, (uint32_t)decoder.buf, decoder.dmalen);
-
-//   WRITE_REG(hfmac.Instance->PARAM, (uint32_t)(hfmac.FilterParam));
 #endif
 
-	//	 HAL_ADC_Start_DMA(&hadc2,(uint32_t*) &DAC2->DHR12R1, 1);
+	//	 HAL_ADC_Start_DMA(&hadc2,(uint32_t*) &DAC2->DHR12R1, 1); // test
 	HAL_ADC_Start_DMA(&hadc2, (uint32_t *)&FMAC->WDATA, 1);
-	// HAL_ADC_Start_DMA(&hadc2,(uint32_t*) buff, LEN*NFLT*2);
 
 	while (1)
 	{
+		 DecoderRun();
+		
+		if (decoder.state < 0) BSP_LED_Off(LED_GREEN);
+		else BSP_LED_On(LED_GREEN);
+
+		if (decoder.CodeReadyFlag)
+		{
+			decoder.CodeReadyFlag = false;
+			//TODO: unpack data
+		}
+
 		/* -- Sample board code for User push-button in interrupt mode ---- */
 		if (BspButtonState == BUTTON_PRESSED)
 		{
