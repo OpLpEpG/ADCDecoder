@@ -72,11 +72,11 @@ public:
   {
     return bufExPtr;
   }
-  INLN void NextDataIRQ(void) //__attribute__((section (".ccmram")))
+  INLN void NextDataIRQ(void) 
   {
     dmaCnt += dmalen;
   }
-  INLN void NextDataPRG(void) //__attribute__((section (".ccmram")))
+  INLN void NextDataPRG(void) 
   {
     if (state < 0)
       nextSp();
@@ -92,12 +92,8 @@ private:
 
   volatile uint32_t dmaCnt;
   uint32_t SpCnt;
-  //bool flagCurSp;
   buff_index_t ptr_dma;
   buff_index_t ptr;
-  int32_t rescur;
-  // int32_t rescurmax;
-  // int32_t rescurmin;
   uint32_t Dtakt;
   uint32_t DtaktCod;
   int16_t buf[buflen + buflenEx];
@@ -107,18 +103,13 @@ private:
         decode10,decode11,decode12,decode13,decode14,decode15,decode16,decode17,decode18,decode19,
         decode20,decode21,decode22,decode23,decode24,decode25,decode26,decode27,decode28,decode29,decode30,decode31};
 
-  // float decodeCod(uint32_t code) __attribute__((section (".ccmram")));
-  INLN void nextSp(void) // __attribute__((section (".ccmram")))
+  INLN void nextSp(void) 
   {
     while (dmaCnt >= splen + SMP_PER_SYM / 2)
     {
       uint32_t takt = TIM1->CNT;
-      // float
-      rescur = decodeSp(&buf[ptr.index]);
-      // if (rescur > rescurmax)
-      //   rescurmax = rescur;
-      // if (rescur < rescurmin)
-      //   rescurmin = rescur;
+      
+      int32_t rescur = decodeSp(&buf[ptr.index]);
 
       if (rescur >= porogsp * 32 * 4)
       {
