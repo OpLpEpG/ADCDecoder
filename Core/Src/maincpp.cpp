@@ -3,6 +3,7 @@
  *
  *  Created on: Sep 30, 2024
  *      Author: User
+ * 
  */
 
 #include "maincpp.h"
@@ -13,10 +14,16 @@
 #include "fmac.h"
 #include "dac.h"
 #include "dma.h"
-#include "adecoder.h"
 #include "stm32g4xx_hal_fmac.h"
 
+#include "adecoder.h"
+#include "packer.h"
+#include "ndm.h"
+#include "GenExample.h"
+
 extern __IO uint32_t BspButtonState;
+
+//extern void inner_Encode(const void* inData, uint8_t* outData, const GeneratedItem_t* metadata, uint8_t lenmetadata);
 
 static const uint_fast8_t NFLT = 20;
 static const uint_fast8_t STP_LN = 4;
@@ -25,6 +32,7 @@ static const uint_fast8_t LEN_DATA = 28;
 typedef adecoder_t<NFLT, STP_LN, LEN_DATA> decinst_t;
 
 static decinst_t decoder;
+static ndm_t ndmData;
 
 static int16_t dmaBuf[decoder.dmalen];
 
@@ -139,7 +147,7 @@ extern "C" void main_cpp_begin(void)
 		if (decoder.CodeReadyFlag)
 		{
 			decoder.CodeReadyFlag = false;
-			//TODO: unpack data
+			Decode(decoder.Code, &ndmData);
 		}
 
 		/* -- Sample board code for User push-button in interrupt mode ---- */
