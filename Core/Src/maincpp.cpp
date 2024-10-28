@@ -38,11 +38,12 @@ static int16_t dmaBuf[decoder.dmalen];
 
 void DMA_DoubleBuffCallback(DMA_HandleTypeDef* d) __attribute__((section (".ccmram")));
 void DecoderRun(void) __attribute__((section (".ccmram")));
+void HAL_FMAC_OutputDataReadyCallback(FMAC_HandleTypeDef *hfmac) __attribute__((section (".ccmram")));
 
 void HAL_FMAC_OutputDataReadyCallback(FMAC_HandleTypeDef *hfmac)
 {
 	/* Prevent unused argument(s) compilation warning */
-	UNUSED(hfmac);
+	//UNUSED(hfmac);
 
 	HAL_DMA_Start_IT(&hdma_memtomem_dma1_channel2,
 			(uint32_t)dmaBuf,
