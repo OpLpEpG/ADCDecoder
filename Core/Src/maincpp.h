@@ -9,7 +9,7 @@
 #define SRC_MAINCPP_H_
 #include "main.h"
 
-void HAL_FMAC_OutputDataReadyCallback(FMAC_HandleTypeDef *hfmac);
+void HAL_FMAC_OutputDataReadyCallback(FMAC_HandleTypeDef *hfmac) __attribute__((section (".ccmram")));
 class maincpp {
 };
 

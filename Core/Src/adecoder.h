@@ -16,8 +16,25 @@
 
 #define INLN __attribute__((__always_inline__)) inline
 
+#define ALG_SIMPLE_POROG   0
+#define ALG_REGARD_SP      1
+#define ALG_DTAKT_SP       2
+
+// нужно выбрать только одно
+//#define ALG_SETUP ALG_SIMPLE_POROG
+//#define ALG_SETUP ALG_REGARD_SP 
+#define ALG_SETUP ALG_DTAKT_SP
+
+
+// можно выбрать только одно
+//#define TST_TAKT
+#define TST_TAKT_GLOBAL
+
 #define POROG_SP 70
 #define REGARD_SP 50
+
+//#define POROG_SP 40
+//#define REGARD_SP 40
 
 #define FIND_SP (-1)
 #define FIND_CODE (0)
@@ -32,16 +49,18 @@ public:
   static const uint_fast16_t bits = round(log2(splen * 3));
   static const uint_fast16_t buflen = 1 << bits;
   static const uint_fast16_t buflenMask = buflen - 1;
-  static const uint_fast16_t dmalen = buflen / 16;
+  static const uint_fast16_t dmalen = 256;// buflen / 16;
   static const uint_fast16_t buflenEx = dmalen * (1 + splen / dmalen);
   static const uint_fast16_t porogADC_max = 1 << 11; // 12 bit adc-sign
   static const uint_fast16_t delayTest = (SMP_PER_SYM/2/STEP_LEN)*STEP_LEN;
-  static const int32_t porogsp = porogADC_max * POROG_SP / 100;
+  static const uint32_t DeltaSP = 400000; // takt in sec
+  static const int32_t porogsp = porogADC_max *32 *4 * POROG_SP / 100 ;
   typedef struct
   {
     uint32_t index : bits;
   } buff_index_t;
 
+  #if (ALG_SETUP != ALG_SIMPLE_POROG)
   typedef struct
   {
     buff_index_t ptr;
@@ -49,22 +68,23 @@ public:
     /// @brief задержка 
     uint32_t delay;
   }SP_max_t;
+  #endif
   typedef struct
   {
     buff_index_t ptr;
     int32_t maxCorr;
-    int_fast8_t BestIdx;
-    uint_fast8_t Qamp;
-    uint_fast8_t Qregard;
-    SP_max_t loMax;
+    #if (ALG_SETUP != ALG_SIMPLE_POROG)
     SP_max_t hiMax;
+    SP_max_t loMax;
+    #endif
+    uint_fast8_t Qamp;
+    #if (ALG_SETUP == ALG_REGARD_SP)
+    uint_fast8_t Qregard;
+    #endif
+    int_fast8_t BestIdx;
   } SP_result_t;
 
-  uint8_t Code[CODELEN];
-  uint8_t CodeQ[CODELEN];
-  bool CodeReadyFlag;
-
-  INLN uint32_t NextDma(void)
+  INLN uint32_t DmaStart(buff_index_t& ptr_dma, uint32_t& bufExPtr)
   {
     uint32_t res = ptr_dma.index;
     if (res < buflenEx) 
@@ -75,55 +95,79 @@ public:
     else
     {
       dma_status = 1;
+      bufExPtr = 0;
     }    
     ptr_dma.index += dmalen;
     return (uint32_t)&buf[res];
   }
-  INLN uint32_t NextDmaEx(void)
+
+  INLN void DmaFinish(void)
   {
-    return bufExPtr;
+    if (++dma_status >= 2)
+    {
+      dmaCnt += dmalen;
+    }
   }
-  INLN void NextDataIRQ(void) 
-  {
-    dmaCnt += dmalen;
-  }
-  INLN void NextDataPRG(void) 
+
+  INLN void Handler(void)
   {
     if (state < 0)
       nextSp();
     if (state >= 0)
       nextCod();
   }
+
+  /// @brief -1 find SP 0..CODELEN-1 find codes  
   int_fast8_t state = FIND_SP;
+
+  /// @brief принятие решения о нахождении СП
   SP_result_t SpRes;
-  uint_fast8_t dma_status;
+  bool SpReadyFlag;
+
+  /// @brief пртнятые коды
+  uint8_t Code[CODELEN];
+  /// @brief качество принятых кодов %
+  uint8_t CodeQ[CODELEN];
+  bool CodeReadyFlag;
 
 private:
   typedef int32_t (*decodefunc_t)(int16_t *buf);
 
   volatile uint32_t dmaCnt;
-  uint32_t SpCnt;
-  buff_index_t ptr_dma;
+  uint_fast8_t dma_status;
   buff_index_t ptr;
+  #ifdef TST_TAKT_GLOBAL
+  uint32_t Dtakt;
+  uint32_t dmaCnt1;
+  uint32_t dmaCnt2;
+  int32_t dmaCntDelta;
+  #endif
+  #ifdef TST_TAKT
   uint32_t Dtakt;
   uint32_t DtaktCod;
+  #endif  
   int16_t buf[buflen + buflenEx];
-  uint32_t bufExPtr;  
+  #if (ALG_SETUP != ALG_SIMPLE_POROG)
   SP_max_t spMaxHi;
   SP_max_t spMaxLo;  
+  #endif
   const decodefunc_t decodeN[32] = {
         decode0,decode1,decode2,decode3,decode4,decode5,decode6,decode7,decode8,decode9,
         decode10,decode11,decode12,decode13,decode14,decode15,decode16,decode17,decode18,decode19,
         decode20,decode21,decode22,decode23,decode24,decode25,decode26,decode27,decode28,decode29,decode30,decode31};
 
-  INLN void nextSp(void) //__attribute__((optimize("-Ofast")))
+
+  INLN void nextSp(void) 
   {
-    while (dmaCnt >= splen + STEP_LEN)//SMP_PER_SYM / 2)
+    while (dmaCnt >= splen + STEP_LEN)
     {
-      uint32_t takt = TIM1->CNT;
+      #ifdef TST_TAKT
+      uint32_t takt = TIM2->CNT;
+      #endif
       
       int32_t rescur = decodeSp(&buf[ptr.index]);
 
+      #if (ALG_SETUP == ALG_REGARD_SP)
       if (rescur >= spMaxLo.maxCorr)
       {
         spMaxLo.maxCorr = rescur;
@@ -142,85 +186,142 @@ private:
       }
       else if (spMaxHi.delay >= buflen - splen - dmalen)
       {
-    	  //uint_fast8_t po = 100 *(1 - (float)spMaxLo.maxCorr / spMaxHi.maxCorr);
     	  uint_fast8_t po = 100 - 100 * spMaxLo.maxCorr / spMaxHi.maxCorr;
-                                
-        if (po >= REGARD_SP)
+        if (po >= REGARD_SP && spMaxHi.maxCorr >= porogsp)
         {
           SpRes.Qregard = po;
-          const int_fast8_t Delta = STEP_LEN;// SMP_PER_SYM / 2;
-          SpRes.maxCorr = 0;
 
-          int_fast8_t BestIdx = -Delta;
-          buff_index_t p = spMaxHi.ptr;
-          p.index -= Delta;
-          for (int_fast8_t i = -Delta; i < Delta; i++)
-          {
-            int32_t r = decodeSp(&buf[p.index]);
-            if (SpRes.maxCorr <= r)
-            {
-              SpRes.maxCorr = r;
-              SpRes.ptr = p;
-              BestIdx = i;
-            }
-            p.index++;
-          }
-          SpRes.Qamp = SpRes.maxCorr / 32 / 4 * 100 / porogADC_max;
-          SpRes.BestIdx = BestIdx;
+          SpPosCorrector(spMaxHi.ptr);
+
           SpRes.loMax = spMaxLo;
           SpRes.hiMax = spMaxHi;
 
-          // correct ptr and coundt to best Q, skip SP
+          // correct ptr and dmaCnt to best Q, skip SP
           ptr.index = SpRes.ptr.index + splen;
-          int32_t deltaDma = splen + BestIdx - spMaxHi.delay;
+          int32_t deltaDma = splen + SpRes.BestIdx - spMaxHi.delay;
           DMA_CRITICAL(dmaCnt -= deltaDma);
+          // reset all
+          spMaxLo.maxCorr = 0;
+          spMaxHi.maxCorr = 0;
+          spMaxHi.delay = 0;
 
           state = FIND_CODE;
+          SpReadyFlag = true;
 
+//          if (Dtakt < 10000)
+//          {
+//        	  while(1)
+//        	  {
+//
+//        	  }
+//          }
           return;
         }
         spMaxLo.maxCorr = 0;
         spMaxHi.maxCorr = 0;
         spMaxHi.delay = 0;
-      }//*/
-
-     /* if (rescur >= porogsp * 32 * 4)
+      }
+      #elif (ALG_SETUP == ALG_SIMPLE_POROG)
+      if (rescur >= porogsp)
       {
-        const int_fast8_t Delta = STEP_LEN;//SMP_PER_SYM/2;
-        SpRes.maxCorr = 0;
-
-        int_fast8_t BestIdx = -Delta;
-        buff_index_t p = ptr;
-        p.index -= Delta;
-        for (int_fast8_t i = -Delta; i < Delta; i++)
-        {
-          int32_t r = decodeSp(&buf[p.index]);
-          if (SpRes.maxCorr <= r)
-          {
-            SpRes.maxCorr = r;
-            SpRes.ptr = p;
-            BestIdx = i;
-          }
-          p.index++;
-        }
-        SpRes.Qamp = SpRes.maxCorr / 32 / 4 * 100 / porogADC_max;
-        SpRes.BestIdx = BestIdx;
+        SpPosCorrector(ptr);
         
-        // correct ptr and coundt to best Q, skip SP        
-        ptr.index = SpRes.ptr.index + splen;        
-        DMA_CRITICAL(dmaCnt -= splen + BestIdx);
+        // correct ptr and dmaCnt to best Q, skip SP        
+        ptr.index = SpRes.ptr.index + splen;   
+        int32_t deltaDma = splen + SpRes.BestIdx;
+        DMA_CRITICAL(dmaCnt -= deltaDma);
         
         state = FIND_CODE;
+        SpReadyFlag = true;
         return;
-      }//*/ 
+      }
+      #elif (ALG_SETUP == ALG_DTAKT_SP)
+
+      static const int32_t DLO = DeltaSP - SMP_PER_SYM/2;
+      static const int32_t DHI = DeltaSP + SMP_PER_SYM/2;
+
+      if (rescur >= spMaxLo.maxCorr)
+      {
+        spMaxLo.maxCorr = rescur;
+        spMaxLo.ptr = ptr;
+        spMaxLo.delay = 0;
+      }
+      else if (spMaxLo.delay == delayTest)
+      {
+        // проверка на задержку между СП (spMaxLoб, spMaxHi)
+        if (spMaxHi.delay >= DLO && spMaxHi.delay <= DHI)
+        {
+          SpPosCorrector(spMaxLo.ptr);
+
+          SpRes.loMax = spMaxLo;
+          SpRes.hiMax = spMaxHi;
+
+          spMaxHi = spMaxLo;
+          spMaxLo.maxCorr = 0; 
+
+          // correct ptr and dmaCnt to best Q, skip SP
+          ptr.index = SpRes.ptr.index + splen;
+          int32_t deltaDma = splen + SpRes.BestIdx;
+          DMA_CRITICAL(dmaCnt -= deltaDma);
+          spMaxHi.delay += deltaDma;
+
+          state = FIND_CODE;
+          SpReadyFlag = true;
+          return;
+        }
+        else if (spMaxLo.maxCorr >= spMaxHi.maxCorr)
+        {
+          // допустим это СП
+          spMaxHi = spMaxLo;
+          // ищем вторичные максимумы  после СП
+          spMaxLo.maxCorr = 0;
+        }
+      }
+      // все плохо
+      else if (spMaxHi.delay > DHI)
+      {
+        spMaxHi.maxCorr = 0;
+        spMaxHi.delay = 0;
+        spMaxLo.maxCorr = 0;
+        spMaxLo.delay = 0;
+      }
+      #endif
 
       ptr.index += STEP_LEN;
       DMA_CRITICAL(dmaCnt -= STEP_LEN);
-      SpCnt += 1;
+
+      #if (ALG_SETUP != ALG_SIMPLE_POROG)
       spMaxHi.delay += STEP_LEN;
       spMaxLo.delay += STEP_LEN;
-      Dtakt = TIM1->CNT - takt;
+      #endif
+
+      #ifdef TST_TAKT
+      Dtakt = TIM2->CNT - takt;
+      #endif
+
     }
+  }
+  INLN void SpPosCorrector(buff_index_t ptr)
+  {
+    const int_fast8_t Delta = STEP_LEN; 
+    SpRes.maxCorr = 0;
+
+    int_fast8_t BestIdx = -Delta;
+    buff_index_t p = ptr;
+    p.index -= Delta;
+    for (int_fast8_t i = -Delta; i < Delta; i++)
+    {
+      int32_t r = decodeSp(&buf[p.index]);
+      if (SpRes.maxCorr <= r)
+      {
+        SpRes.maxCorr = r;
+        SpRes.ptr = p;
+        BestIdx = i;
+      }
+      p.index++;
+    }
+    SpRes.Qamp = SpRes.maxCorr / 32 / 4 * 100 / porogADC_max;
+    SpRes.BestIdx = BestIdx;
   }
 
 #pragma GCC push_options
@@ -229,35 +330,52 @@ private:
   {
     while (dmaCnt >= codlen)// + SMP_PER_SYM / 2)
     {
-
-      uint32_t takt = TIM1->CNT;
-
-      int32_t BestRes = 0;
+      #ifdef TST_TAKT
+       uint32_t takt = TIM2->CNT;
+      #endif
+      int32_t BestResH = 0;
+      int32_t BestResL = 0;
       uint_fast8_t BestCode = 0;
       for (uint_fast8_t i = 0; i < 32; i++)
       {
         int32_t r = decodeN[i](&buf[ptr.index]);
-        if (r > BestRes)
+        if (r > BestResH)
         {
-          BestRes = r;
+          BestResL = BestResH;
+          BestResH = r;
           BestCode = i;
+        }
+        else if (r > BestResL)
+        {
+          BestResL = r;  
         }
       }
       Code[state] = BestCode;
-      CodeQ[state] = BestRes / 32 * 100 / porogADC_max;
+      // CodeQ[state] = BestRes / 32 * 100 / porogADC_max; //amp
+      CodeQ[state] = 100 - BestResL* 100 /BestResH; //relative
 
       ptr.index += codlen;
       DMA_CRITICAL(dmaCnt -= codlen);
 
-      DtaktCod = TIM1->CNT - takt;
+      #if (ALG_SETUP == ALG_DTAKT_SP)
+       spMaxHi.delay += codlen;
+      #endif
+
+      #ifdef TST_TAKT
+      DtaktCod = TIM2->CNT - takt;
+      #endif
 
       if (++state == CODELEN)
       {
+        #ifdef TST_TAKT_GLOBAL
+        dmaCnt2 = dmaCnt1;
+        dmaCnt1 = dmaCnt;
+        dmaCntDelta = dmaCnt2 - dmaCnt1;
+        Dtakt = TIM2->CNT + (dmaCntDelta + delayTest)*25;
+        TIM2->CNT = 0;
+        #endif
+
         state = FIND_SP;
-        spMaxLo.maxCorr = 0;
-        spMaxHi.maxCorr = 0;
-        spMaxHi.delay = 0;
-        SpCnt = 0;
         CodeReadyFlag = true;
         break;
       }

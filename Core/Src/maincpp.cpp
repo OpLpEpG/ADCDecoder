@@ -16,6 +16,7 @@
 #include "dma.h"
 #include "stm32g4xx_hal_fmac.h"
 
+#include "aru.h"
 #include "adecoder.h"
 #include "packer.h"
 #include "ndm.h"
@@ -23,7 +24,7 @@
 
 extern __IO uint32_t BspButtonState;
 
-//extern void inner_Encode(const void* inData, uint8_t* outData, const GeneratedItem_t* metadata, uint8_t lenmetadata);
+volatile uint32_t GlobGuideTimer;
 
 static const uint_fast8_t NFLT = 20;
 static const uint_fast8_t STP_LN = 4;
@@ -31,41 +32,35 @@ static const uint_fast8_t LEN_DATA = 28;
 
 typedef adecoder_t<NFLT, STP_LN, LEN_DATA> decinst_t;
 
+static aru_t aru;
 static decinst_t decoder;
 static ndm_t ndmData;
-
 static int16_t dmaBuf[decoder.dmalen];
 
 void DMA_DoubleBuffCallback(DMA_HandleTypeDef* d) __attribute__((section (".ccmram")));
-void DecoderRun(void) __attribute__((section (".ccmram")));
-void HAL_FMAC_OutputDataReadyCallback(FMAC_HandleTypeDef *hfmac) __attribute__((section (".ccmram")));
+void DecoderHandler(void) __attribute__((section (".ccmram")));
+// void HAL_FMAC_OutputDataReadyCallback(FMAC_HandleTypeDef *hfmac) __attribute__((section (".ccmram")));
 
+static decinst_t::buff_index_t ptr_dma;
 void HAL_FMAC_OutputDataReadyCallback(FMAC_HandleTypeDef *hfmac)
 {
-	/* Prevent unused argument(s) compilation warning */
-	//UNUSED(hfmac);
+	uint32_t bufExPtr;
+	uint32_t bufPtr = decoder.DmaStart(ptr_dma, bufExPtr);
 
-	HAL_DMA_Start_IT(&hdma_memtomem_dma1_channel2,
-			(uint32_t)dmaBuf,
-			decoder.NextDma(), decoder.dmalen/2);
-	 if (decoder.dma_status == 0)
-	 	HAL_DMA_Start_IT(&hdma_memtomem_dma2_channel2,
-	 		(uint32_t)dmaBuf,
-	 		decoder.NextDmaEx(), decoder.dmalen/2);
+	HAL_DMA_Start_IT(&hdma_memtomem_dma1_channel2, (uint32_t)dmaBuf, bufPtr, decoder.dmalen / 2);
+	if (bufExPtr > 0)
+		HAL_DMA_Start_IT(&hdma_memtomem_dma2_channel2, (uint32_t)dmaBuf, bufExPtr, decoder.dmalen / 2);
 }
 
-void DMA_DoubleBuffCallback(DMA_HandleTypeDef* d)
-{	
-	if (++decoder.dma_status >= 2)
-	{
-		decoder.NextDataIRQ();
-	}
+void DMA_DoubleBuffCallback(DMA_HandleTypeDef *d)
+{
+	decoder.DmaFinish();
 }
 
- void DecoderRun(void)
- {
- 	decoder.NextDataPRG();
- }
+void DecoderHandler(void)
+{
+	decoder.Handler();
+}
 
 extern "C" void main_cpp_begin(void)
 {
@@ -74,7 +69,7 @@ extern "C" void main_cpp_begin(void)
 		/* Starting Error */
 		Error_Handler();
 	}
-	if (HAL_TIM_Base_Start(&htim1) != HAL_OK)
+	if (HAL_TIM_Base_Start(&htim2) != HAL_OK)
 	{
 		/* Starting Error */
 		Error_Handler();
@@ -89,7 +84,7 @@ extern "C" void main_cpp_begin(void)
 		/* Starting Error */
 		Error_Handler();
 	}
-	
+
 
 	static const int16_t ni = (int16_t)(1.0 / NFLT * 0x8000);
 	int16_t FIR_COEF[NFLT];
@@ -135,21 +130,44 @@ extern "C" void main_cpp_begin(void)
 		Error_Handler();
 #endif
 
-	//	 HAL_ADC_Start_DMA(&hadc2,(uint32_t*) &DAC2->DHR12R1, 1); // test
-	HAL_ADC_Start_DMA(&hadc2, (uint32_t *)&FMAC->WDATA, 1);
+		//  HAL_ADC_Start_DMA(&hadc2,(uint32_t*) &DAC2->DHR12R1, 1); // test
+
+	if (HAL_ADC_Start_DMA(&hadc2, (uint32_t *)&FMAC->WDATA, 1) != HAL_OK)
+	{
+		/* Starting Error */
+		Error_Handler();
+	}
+	__HAL_TIM_CLEAR_FLAG(&htim3, TIM_FLAG_UPDATE);
+	if (HAL_TIM_Base_Start_IT(&htim3) != HAL_OK)
+	{
+		/* Starting Error */
+		Error_Handler();
+	}
 
 	while (1)
 	{
-		 DecoderRun();
-		
-		if (decoder.state < 0) BSP_LED_Off(LED_GREEN);
-		else BSP_LED_On(LED_GREEN);
+		 DecoderHandler();
 
+		if (decoder.SpReadyFlag)
+		{
+			decoder.SpReadyFlag = false;
+			// TODO: handle New SP Data
+			 GlobGuideTimer =TIM3->CNT;
+//			aru.UpdateARU((GlobGuideTimer << 16) + TIM3->CNT);
+			TIM3->CNT =0;
+//			GlobGuideTimer = 0;
+		}
+		
 		if (decoder.CodeReadyFlag)
 		{
 			decoder.CodeReadyFlag = false;
 			Decode(decoder.Code, &ndmData);
+			// TODO: handle New Data
 		}
+
+		if (decoder.state < 0) BSP_LED_Off(LED_GREEN);
+		else BSP_LED_On(LED_GREEN);
+
 
 		/* -- Sample board code for User push-button in interrupt mode ---- */
 		if (BspButtonState == BUTTON_PRESSED)

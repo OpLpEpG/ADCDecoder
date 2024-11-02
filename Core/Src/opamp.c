@@ -44,7 +44,7 @@ void MX_OPAMP3_Init(void)
   hopamp3.Init.InternalOutput = ENABLE;
   hopamp3.Init.TimerControlledMuxmode = OPAMP_TIMERCONTROLLEDMUXMODE_DISABLE;
   hopamp3.Init.PgaConnect = OPAMP_PGA_CONNECT_INVERTINGINPUT_IO0_IO1_BIAS;
-  hopamp3.Init.PgaGain = OPAMP_PGA_GAIN_64_OR_MINUS_63;
+  hopamp3.Init.PgaGain = OPAMP_PGA_GAIN_2_OR_MINUS_1;
   hopamp3.Init.UserTrimming = OPAMP_TRIMMING_USER;
   if (HAL_OPAMP_Init(&hopamp3) != HAL_OK)
   {
