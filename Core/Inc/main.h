@@ -76,13 +76,6 @@ void Error_Handler(void);
 
 /* USER CODE BEGIN Private defines */
 
-//#define DAC_TEST
-
-#define DMA_SEI {__HAL_DMA_ENABLE_IT(&hdma_memtomem_dma1_channel2,DMA_IT_TC);__HAL_DMA_ENABLE_IT(&hdma_memtomem_dma2_channel2,DMA_IT_TC);}
-#define DMA_CLI {__HAL_DMA_DISABLE_IT(&hdma_memtomem_dma1_channel2,DMA_IT_TC);__HAL_DMA_DISABLE_IT(&hdma_memtomem_dma2_channel2,DMA_IT_TC);}
-#define DMA_CRITICAL(action) {DMA_CLI {action;} DMA_SEI}
-#define OPAMP_SET_PGA(hopamp,gain) MODIFY_REG(hopamp->Instance->CSR,OPAMP_CSR_PGGAIN,gain)
-extern volatile uint32_t GlobGuideTimer;
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

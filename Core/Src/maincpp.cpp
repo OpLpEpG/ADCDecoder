@@ -6,7 +6,6 @@
  * 
  */
 
-#include "maincpp.h"
 #include "main.h"
 #include "tim.h"
 #include "opamp.h"
@@ -16,40 +15,95 @@
 #include "dma.h"
 #include "stm32g4xx_hal_fmac.h"
 
-#include "aru.h"
-#include "adecoder.h"
+#include "maincpp.h"
+#include "adecoder.hpp"
+#include "aru.hpp"
 #include "packer.h"
 #include "ndm.h"
 #include "GenExample.h"
 
 extern __IO uint32_t BspButtonState;
 
-volatile uint32_t GlobGuideTimer;
 
-static const uint_fast8_t NFLT = 20;
-static const uint_fast8_t STP_LN = 4;
-static const uint_fast8_t LEN_DATA = 28;
-
-typedef adecoder_t<NFLT, STP_LN, LEN_DATA> decinst_t;
-
-static aru_t aru;
-static decinst_t decoder;
 static ndm_t ndmData;
-static int16_t dmaBuf[decoder.dmalen];
-
-void DMA_DoubleBuffCallback(DMA_HandleTypeDef* d) __attribute__((section (".ccmram")));
-void DecoderHandler(void) __attribute__((section (".ccmram")));
-// void HAL_FMAC_OutputDataReadyCallback(FMAC_HandleTypeDef *hfmac) __attribute__((section (".ccmram")));
-
+static int16_t dmaBuf[decinst_t::dmalen];
 static decinst_t::buff_index_t ptr_dma;
+static decinst_t decoder;
+static aru_t aru;
+
+#define OPAMP_SET_PGA(hopamp,gain) MODIFY_REG(hopamp->CSR,(0x07UL << OPAMP_CSR_PGGAIN_Pos),gain)
+uint32_t OpampPGA(int_fast8_t Inc)
+{
+	uint32_t pga =  OPAMP3->CSR & (0x07UL << OPAMP_CSR_PGGAIN_Pos);
+	if (Inc > 0)
+	{
+		switch (pga)
+		{
+		case OPAMP_PGA_GAIN_2_OR_MINUS_1:
+			pga = OPAMP_PGA_GAIN_4_OR_MINUS_3;
+			break;
+		case OPAMP_PGA_GAIN_4_OR_MINUS_3:
+			pga = OPAMP_PGA_GAIN_8_OR_MINUS_7;
+			break;
+		case OPAMP_PGA_GAIN_8_OR_MINUS_7:
+			pga = OPAMP_PGA_GAIN_16_OR_MINUS_15;
+			break;
+		case OPAMP_PGA_GAIN_16_OR_MINUS_15:
+			pga = OPAMP_PGA_GAIN_32_OR_MINUS_31;
+			break;
+		case OPAMP_PGA_GAIN_32_OR_MINUS_31:
+			pga = OPAMP_PGA_GAIN_64_OR_MINUS_63;
+			break;
+		
+		default:
+			break;
+		}
+	OPAMP_SET_PGA(OPAMP3,pga);
+	}
+	else if (Inc < 0)
+	{
+		switch (pga)
+		{
+		case OPAMP_PGA_GAIN_4_OR_MINUS_3:
+			pga = OPAMP_PGA_GAIN_2_OR_MINUS_1;
+			break;
+		case OPAMP_PGA_GAIN_8_OR_MINUS_7:
+			pga = OPAMP_PGA_GAIN_4_OR_MINUS_3;
+			break;
+		case OPAMP_PGA_GAIN_16_OR_MINUS_15:
+			pga = OPAMP_PGA_GAIN_8_OR_MINUS_7;
+			break;
+		case OPAMP_PGA_GAIN_32_OR_MINUS_31:
+			pga = OPAMP_PGA_GAIN_16_OR_MINUS_15;
+			break;
+		case OPAMP_PGA_GAIN_64_OR_MINUS_63:
+			pga = OPAMP_PGA_GAIN_32_OR_MINUS_31;
+			break;
+		
+		default:
+			break;
+		}
+	OPAMP_SET_PGA(OPAMP3,pga);	
+	}
+	return pga >> OPAMP_CSR_PGGAIN_Pos;
+}
+
+extern "C" void USER_TIMER_ARU_Callback(TIM_HandleTypeDef* timer, uint32_t guardCnt)
+{
+	aru.OnTimer(guardCnt);
+	timer->Instance->ARR = aru.timer_ARR-1;
+	if (aru.aruMmode == AruMmode::NOISE) BSP_LED_Off(LED_GREEN);
+	else BSP_LED_On(LED_GREEN);
+}
+
 void HAL_FMAC_OutputDataReadyCallback(FMAC_HandleTypeDef *hfmac)
 {
 	uint32_t bufExPtr;
 	uint32_t bufPtr = decoder.DmaStart(ptr_dma, bufExPtr);
 
-	HAL_DMA_Start_IT(&hdma_memtomem_dma1_channel2, (uint32_t)dmaBuf, bufPtr, decoder.dmalen / 2);
+	HAL_DMA_Start_IT(&hdma_memtomem_dma1_channel2, (uint32_t)dmaBuf, bufPtr, decinst_t::dmalen / 2);
 	if (bufExPtr > 0)
-		HAL_DMA_Start_IT(&hdma_memtomem_dma2_channel2, (uint32_t)dmaBuf, bufExPtr, decoder.dmalen / 2);
+		HAL_DMA_Start_IT(&hdma_memtomem_dma2_channel2, (uint32_t)dmaBuf, bufExPtr, decinst_t::dmalen / 2);
 }
 
 void DMA_DoubleBuffCallback(DMA_HandleTypeDef *d)
@@ -62,6 +116,7 @@ void DecoderHandler(void)
 	decoder.Handler();
 }
 
+
 extern "C" void main_cpp_begin(void)
 {
 	if (HAL_TIM_OC_Start(&htim4, TIM_CHANNEL_4) != HAL_OK)
@@ -69,11 +124,13 @@ extern "C" void main_cpp_begin(void)
 		/* Starting Error */
 		Error_Handler();
 	}
+	/// @brief  только для тестовых целей
 	if (HAL_TIM_Base_Start(&htim2) != HAL_OK)
 	{
 		/* Starting Error */
 		Error_Handler();
 	}
+	/// @brief  триггер для опроса АЦП
 	if (HAL_TIM_Base_Start(&htim4) != HAL_OK)
 	{
 		/* Starting Error */
@@ -125,9 +182,20 @@ extern "C" void main_cpp_begin(void)
 		Error_Handler();
 	if (HAL_DMA_RegisterCallback(&hdma_memtomem_dma1_channel2, HAL_DMA_XFER_CPLT_CB_ID, DMA_DoubleBuffCallback) != HAL_OK)
 		Error_Handler();
-	len = decoder.dmalen;
+	len = decinst_t::dmalen;
 	if (HAL_FMAC_FilterStart(&hfmac, dmaBuf, &len) != HAL_OK)
 		Error_Handler();
+#endif
+
+#ifdef NOISE_GENERATOR
+	HAL_DAC_Start(&hdac2, DAC_CHANNEL_1);
+	/// @brief  таймер noise
+	__HAL_TIM_CLEAR_FLAG(&htim1, TIM_FLAG_UPDATE);
+	if (HAL_TIM_Base_Start_IT(&htim1) != HAL_OK)
+	{
+		/* Starting Error */
+		Error_Handler();
+	}
 #endif
 
 		//  HAL_ADC_Start_DMA(&hadc2,(uint32_t*) &DAC2->DHR12R1, 1); // test
@@ -137,8 +205,15 @@ extern "C" void main_cpp_begin(void)
 		/* Starting Error */
 		Error_Handler();
 	}
+	/// @brief  таймер АРУ
 	__HAL_TIM_CLEAR_FLAG(&htim3, TIM_FLAG_UPDATE);
 	if (HAL_TIM_Base_Start_IT(&htim3) != HAL_OK)
+	{
+		/* Starting Error */
+		Error_Handler();
+	}
+	__HAL_TIM_CLEAR_FLAG(&htim5, TIM_FLAG_UPDATE);
+	if (HAL_TIM_Base_Start_IT(&htim5) != HAL_OK)
 	{
 		/* Starting Error */
 		Error_Handler();
@@ -152,32 +227,39 @@ extern "C" void main_cpp_begin(void)
 		{
 			decoder.SpReadyFlag = false;
 			// TODO: handle New SP Data
-			 GlobGuideTimer =TIM3->CNT;
-//			aru.UpdateARU((GlobGuideTimer << 16) + TIM3->CNT);
-			TIM3->CNT =0;
-//			GlobGuideTimer = 0;
 		}
 		
 		if (decoder.CodeReadyFlag)
 		{
 			decoder.CodeReadyFlag = false;
-			Decode(decoder.Code, &ndmData);
+
+			// синхранизация таймера
+			HAL_TIM_Base_Stop(&htim5);
+			htim5.Instance->CNT = aru.TIMER_DATA_TICKS - aru.ONE_CODE_TICS;
+			htim5.Instance->ARR = aru.TIMER_DATA_TICKS;
+			aru.OnCodeEnd(decoder);
+			HAL_TIM_Base_Start(&htim5);
+			
+			Decode(decoder.Code, &ndmData);			
 			// TODO: handle New Data
 		}
-
-		if (decoder.state < 0) BSP_LED_Off(LED_GREEN);
-		else BSP_LED_On(LED_GREEN);
+		if  (decoder.state == NOT_FOUND_SP)
+		{
+			aru.Sync = 0;
+		}
+		// if (aru.aruMmode == AruMmode::NOISE) BSP_LED_Off(LED_GREEN);
+		// else BSP_LED_On(LED_GREEN);
 
 
 		/* -- Sample board code for User push-button in interrupt mode ---- */
-		if (BspButtonState == BUTTON_PRESSED)
-		{
-			/* Update button state */
-			BspButtonState = BUTTON_RELEASED;
-			/* -- Sample board code to toggle led ---- */
-			BSP_LED_Toggle(LED_GREEN);
+		// if (BspButtonState == BUTTON_PRESSED)
+		// {
+		// 	/* Update button state */
+		// 	BspButtonState = BUTTON_RELEASED;
+		// 	/* -- Sample board code to toggle led ---- */
+		// 	BSP_LED_Toggle(LED_GREEN);
 
-			/* ..... Perform your action ..... */
-		}
+		// 	/* ..... Perform your action ..... */
+		// }
 	}
 }

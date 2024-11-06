@@ -1,5 +1,5 @@
 /*
- * adecoder.h
+ * adecoder.hpp
  *
  *  Created on: Oct 3, 2024
  *      Author: User
@@ -11,10 +11,9 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <math.h>
-#include <main.h>
 #include <stm32g4xx_hal.h>
 
-#define INLN __attribute__((__always_inline__)) inline
+#include "maincpp.h"
 
 #define ALG_SIMPLE_POROG   0
 #define ALG_REGARD_SP      1
@@ -36,14 +35,16 @@
 //#define POROG_SP 40
 //#define REGARD_SP 40
 
+#define NOT_FOUND_SP (-2)
 #define FIND_SP (-1)
 #define FIND_CODE (0)
 
-template <uint_fast8_t SMP_PER_SYM, uint_fast8_t STEP_LEN, uint_fast8_t CODELEN>
+template <uint_fast8_t SMP_PER_SYM, uint_fast8_t STEP_LEN, uint_fast8_t CODELEN> 
 class adecoder_t
 {
 public:
 
+  static const uint_fast16_t codesCount = CODELEN;    
   static const uint_fast16_t splen = 32 * 4 * SMP_PER_SYM; // in bits
   static const uint_fast16_t codlen = 32 * SMP_PER_SYM;    // in bits
   static const uint_fast16_t bits = round(log2(splen * 3));
@@ -53,7 +54,7 @@ public:
   static const uint_fast16_t buflenEx = dmalen * (1 + splen / dmalen);
   static const uint_fast16_t porogADC_max = 1 << 11; // 12 bit adc-sign
   static const uint_fast16_t delayTest = (SMP_PER_SYM/2/STEP_LEN)*STEP_LEN;
-  static const uint32_t DeltaSP = 400000; // takt in sec
+  static const uint32_t TIMER_ONE_SECOND_TAKTS = 400000; // takt in sec
   static const int32_t porogsp = porogADC_max *32 *4 * POROG_SP / 100 ;
   typedef struct
   {
@@ -237,8 +238,8 @@ private:
       }
       #elif (ALG_SETUP == ALG_DTAKT_SP)
 
-      static const int32_t DLO = DeltaSP - SMP_PER_SYM/2;
-      static const int32_t DHI = DeltaSP + SMP_PER_SYM/2;
+      static const int32_t DLO = TIMER_ONE_SECOND_TAKTS - SMP_PER_SYM*2;
+      static const int32_t DHI = TIMER_ONE_SECOND_TAKTS + SMP_PER_SYM*2;
 
       if (rescur >= spMaxLo.maxCorr)
       {
@@ -253,6 +254,7 @@ private:
         {
           SpPosCorrector(spMaxLo.ptr);
 
+
           SpRes.loMax = spMaxLo;
           SpRes.hiMax = spMaxHi;
 
@@ -260,8 +262,11 @@ private:
           spMaxLo.maxCorr = 0; 
 
           // correct ptr and dmaCnt to best Q, skip SP
+          int32_t deltaDma = splen + SpRes.BestIdx - delayTest;
           ptr.index = SpRes.ptr.index + splen;
-          int32_t deltaDma = splen + SpRes.BestIdx;
+
+          // int32_t deltaDma = splen;
+          // ptr.index += splen;
           DMA_CRITICAL(dmaCnt -= deltaDma);
           spMaxHi.delay += deltaDma;
 
@@ -280,6 +285,7 @@ private:
       // все плохо
       else if (spMaxHi.delay > DHI)
       {
+        state = NOT_FOUND_SP;
         spMaxHi.maxCorr = 0;
         spMaxHi.delay = 0;
         spMaxLo.maxCorr = 0;
@@ -306,7 +312,6 @@ private:
     const int_fast8_t Delta = STEP_LEN; 
     SpRes.maxCorr = 0;
 
-    int_fast8_t BestIdx = -Delta;
     buff_index_t p = ptr;
     p.index -= Delta;
     for (int_fast8_t i = -Delta; i < Delta; i++)
@@ -316,12 +321,11 @@ private:
       {
         SpRes.maxCorr = r;
         SpRes.ptr = p;
-        BestIdx = i;
+        SpRes.BestIdx = i;
       }
       p.index++;
     }
     SpRes.Qamp = SpRes.maxCorr / 32 / 4 * 100 / porogADC_max;
-    SpRes.BestIdx = BestIdx;
   }
 
 #pragma GCC push_options
