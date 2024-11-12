@@ -22,6 +22,7 @@
 #include "ndm.h"
 #include "GenExample.h"
 
+
 extern __IO uint32_t BspButtonState;
 
 
@@ -88,6 +89,7 @@ uint32_t OpampPGA(int_fast8_t Inc)
 	return pga >> OPAMP_CSR_PGGAIN_Pos;
 }
 
+extern "C" void USER_TIMER_ARU_Callback(TIM_HandleTypeDef* timer, uint32_t guardCnt) __attribute__((section (".ccmram")));
 extern "C" void USER_TIMER_ARU_Callback(TIM_HandleTypeDef* timer, uint32_t guardCnt)
 {
 	aru.OnTimer(guardCnt);

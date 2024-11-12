@@ -19,9 +19,27 @@ enum AruMmode
     DATA,
 };
 
+#define EXP_FLT_KOEF 0.1
+#define EXP_FLT_ADD (1 + EXP_FLT_KOEF)
 class aru_t
 {
 private:
+    INLN void expFlt(float& flt, float cur)
+    {
+        flt = (1-EXP_FLT_KOEF)*flt + EXP_FLT_KOEF*cur;
+    }
+    void GainSetup(float cur)
+    {
+        DGain = (1-EXP_FLT_KOEF)*DGain + EXP_FLT_KOEF*cur;
+         
+        if (abs(Gain + DGain - PGAGain)>=1)
+        {
+            PGAGain = OpampPGA(round(Gain + DGain - PGAGain));
+            Gain = PGAGain;
+            DGain = 0;
+        }
+
+    }
 public:
    
    static const uint32_t TIMER_ONE_SECOND_TAKTS = 1000000;
@@ -32,9 +50,11 @@ public:
    static const uint32_t TIMER_NOISE_TICKS = TIMER_ONE_SECOND_TAKTS - TIMER_DATA_TICKS;
 
    uint32_t Sync;
-   uint32_t DataGuardCnt = 10000;
-   uint32_t NoiseGuardCnt = 10000;
-   uint32_t Gain;
+   float DataGuardCnt;// = 10000;
+   float NoiseGuardCnt;// = 10000;
+   float Gain;
+   float DGain;
+   float PGAGain;
    uint_fast8_t spQamp;
    uint_fast8_t codesQavg;
    AruMmode aruMmode;
@@ -56,33 +76,43 @@ public:
    {
         if (aruMmode == NOISE)
         {
-            NoiseGuardCnt = guardCnt;
+            expFlt(NoiseGuardCnt,guardCnt);
             aruMmode = DATA;
             timer_ARR = TIMER_DATA_TICKS;
         }
         else
         {
-            DataGuardCnt = guardCnt;
+            // DataGuardCnt = guardCnt;
+            expFlt(DataGuardCnt,guardCnt);
             aruMmode = NOISE;
             timer_ARR = TIMER_NOISE_TICKS;
 
             if (DataGuardCnt == 0 && NoiseGuardCnt == 0)
             {
-                Gain = OpampPGA(1);     
+                //Gain = OpampPGA(1);     
+                GainSetup(EXP_FLT_ADD);
             }
 
             if (Sync)
             {
-                if (NoiseGuardCnt >= 2000 || DataGuardCnt >= 1000)
+                if (NoiseGuardCnt >= 13000 || DataGuardCnt >= 700)
                 {
-                    Gain = OpampPGA(-1);
+                    //Gain = OpampPGA(-1);
+                    GainSetup(-EXP_FLT_ADD);
+                }
+                else 
+                if (NoiseGuardCnt <= 4000 || DataGuardCnt <= 200)
+                {
+                //Gain = OpampPGA(1);     
+                GainSetup(EXP_FLT_ADD);
                 }
             }
             else
             {
-                if (NoiseGuardCnt + DataGuardCnt >= 4000)
+                if (NoiseGuardCnt + DataGuardCnt >= 15000)
                 {
-                    Gain = OpampPGA(-1);
+                    //Gain = OpampPGA(-1);
+                    GainSetup(-EXP_FLT_ADD);
                 }
             }
         }

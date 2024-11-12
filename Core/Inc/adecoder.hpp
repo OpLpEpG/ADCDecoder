@@ -119,7 +119,7 @@ public:
   }
 
   /// @brief -1 find SP 0..CODELEN-1 find codes  
-  int_fast8_t state = FIND_SP;
+  int_fast8_t state = NOT_FOUND_SP;
 
   /// @brief принятие решения о нахождении СП
   SP_result_t SpRes;
@@ -151,6 +151,7 @@ private:
   #if (ALG_SETUP != ALG_SIMPLE_POROG)
   SP_max_t spMaxHi;
   SP_max_t spMaxLo;  
+  uint32_t LastCodeTakt;
   #endif
   const decodefunc_t decodeN[32] = {
         decode0,decode1,decode2,decode3,decode4,decode5,decode6,decode7,decode8,decode9,
@@ -249,7 +250,7 @@ private:
       }
       else if (spMaxLo.delay == delayTest)
       {
-        // проверка на задержку между СП (spMaxLoб, spMaxHi)
+        // проверка на задержку между СП (spMaxLo, spMaxHi)
         if (spMaxHi.delay >= DLO && spMaxHi.delay <= DHI)
         {
           SpPosCorrector(spMaxLo.ptr);
@@ -282,17 +283,30 @@ private:
           spMaxLo.maxCorr = 0;
         }
       }
-      // все плохо
-      else if (spMaxHi.delay > DHI)
+      else if (state != NOT_FOUND_SP)      
       {
+        // все плохо
+        if (LastCodeTakt > DHI)
+        {
         state = NOT_FOUND_SP;
         spMaxHi.maxCorr = 0;
         spMaxHi.delay = 0;
         spMaxLo.maxCorr = 0;
         spMaxLo.delay = 0;
+        }
       }
+      // if (spMaxHi.delay > DHI)
+      // {
+      //   state = NOT_FOUND_SP;
+      //   spMaxHi.maxCorr = 0;
+      //   spMaxHi.delay = 0;
+      //   spMaxLo.maxCorr = 0;
+      //   spMaxLo.delay = 0;
+      // }
+      // }
       #endif
 
+      LastCodeTakt += STEP_LEN;
       ptr.index += STEP_LEN;
       DMA_CRITICAL(dmaCnt -= STEP_LEN);
 
@@ -381,6 +395,7 @@ private:
 
         state = FIND_SP;
         CodeReadyFlag = true;
+        LastCodeTakt = 0;
         break;
       }
     }

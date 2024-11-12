@@ -28,7 +28,6 @@ static const uint_fast8_t LEN_DATA = 28;
 #define DMA_CRITICAL(action) {DMA_CLI {action;} DMA_SEI}
 
 //#define OPAMP_SET_PGA(hopamp,gain) MODIFY_REG(hopamp->CSR,OPAMP_CSR_PGGAIN,gain)
-
 void HAL_FMAC_OutputDataReadyCallback(FMAC_HandleTypeDef *hfmac) __attribute__((section (".ccmram")));
 void DMA_DoubleBuffCallback(DMA_HandleTypeDef* d) __attribute__((section (".ccmram")));
 void DecoderHandler(void) __attribute__((section (".ccmram")));
