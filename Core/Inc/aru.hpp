@@ -32,10 +32,9 @@ private:
     {
         DGain = (1-EXP_FLT_KOEF)*DGain + EXP_FLT_KOEF*cur;
          
-        if (abs(Gain + DGain - PGAGain)>=1)
+        if (abs(DGain)>=1)
         {
-            PGAGain = OpampPGA(round(Gain + DGain - PGAGain));
-            Gain = PGAGain;
+            PGAGain = OpampPGA(round(DGain));
             DGain = 0;
         }
 
@@ -50,9 +49,8 @@ public:
    static const uint32_t TIMER_NOISE_TICKS = TIMER_ONE_SECOND_TAKTS - TIMER_DATA_TICKS;
 
    uint32_t Sync;
-   float DataGuardCnt;// = 10000;
-   float NoiseGuardCnt;// = 10000;
-   float Gain;
+   float DataGuardCnt;
+   float NoiseGuardCnt;
    float DGain;
    float PGAGain;
    uint_fast8_t spQamp;
@@ -82,49 +80,35 @@ public:
         }
         else
         {
-            // DataGuardCnt = guardCnt;
             expFlt(DataGuardCnt,guardCnt);
             aruMmode = NOISE;
             timer_ARR = TIMER_NOISE_TICKS;
 
             if (DataGuardCnt == 0 && NoiseGuardCnt == 0)
             {
-                //Gain = OpampPGA(1);     
                 GainSetup(EXP_FLT_ADD);
             }
-
             if (Sync)
             {
                 if (NoiseGuardCnt >= 13000 || DataGuardCnt >= 700)
                 {
-                    //Gain = OpampPGA(-1);
                     GainSetup(-EXP_FLT_ADD);
                 }
-                else 
-                if (NoiseGuardCnt <= 4000 || DataGuardCnt <= 200)
+                else if (NoiseGuardCnt <= 4000 || DataGuardCnt <= 200)
                 {
-                //Gain = OpampPGA(1);     
-                GainSetup(EXP_FLT_ADD);
+                    GainSetup(EXP_FLT_ADD);
                 }
             }
             else
             {
                 if (NoiseGuardCnt + DataGuardCnt >= 15000)
                 {
-                    //Gain = OpampPGA(-1);
                     GainSetup(-EXP_FLT_ADD);
                 }
             }
         }
    }
-   // void UpdateARU(uint32_t guardCnt)
-   // {
-   //    gurdcnt = guardCnt;
-   //    // if (gurdcnt >) 
-   // }
 };
-
-// extern aru_t aru;
 
 
 #endif /* ARU_H_ */
